@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using System.Xml;
 using Validation_Management_API.Models.DTO;
+using Validation_Management_API.Models.Enums;
 using Validation_Management_API.Services.Interfaces;
 
 namespace Validation_Management_API.Controllers
@@ -71,6 +72,17 @@ namespace Validation_Management_API.Controllers
             }
 
             return ToActionResult(await projectService.GetDashboard(id));
+        }
+
+        [HttpPatch("{id:int}/status")]
+        public async Task<ActionResult<bool>> ChangeStatus(int id, [FromQuery] ProjectStatus status)
+        {
+            if (id <= 0)
+            {
+                return BadRequest("Id must be greater than 0");
+            }
+
+            return ToActionResult(await projectService.ChangeStatus(id, status));
         }
     }
 }
