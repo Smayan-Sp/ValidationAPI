@@ -319,5 +319,47 @@ namespace Validation_Management_API.Services
 
             return ServiceResult<DashboardDTO>.Ok(dashboard);
         }
+
+        public async Task<ServiceResult<bool>> ChangeStatus(int id, ProjectStatus status)
+        {
+            Project? project = await _db.Projects.Where(p => p.Id == id).FirstOrDefaultAsync();
+
+            if (project == null)
+            {
+                return ServiceResult<bool>.NotFound("That project does not exist");
+            }
+
+            bool allowed = (project.Status, status) switch
+            {
+                (ProjectStatus.Planned, ProjectStatus.InProgress) => true,
+                (ProjectStatus.Planned, ProjectStatus.Cancelled) => true,
+                (ProjectStatus.InProgress, ProjectStatus.Completed) => true,
+                (ProjectStatus.InProgress, ProjectStatus.Cancelled) => true,
+                _ => false
+            };
+
+            if (!allowed)
+            {
+                return ServiceResult<bool>.Conflict($"Cannot change status from {project.Status} to {status}");
+            }
+
+            if (status == ProjectStatus.Completed)
+            {
+                bool hasOpenTasks = await _db.ProjectTasks.AnyAsync(t =>
+                    t.ProjectDocument.ProjectId == id &&
+                    t.Status != ProjectTaskStatus.Completed);
+
+                if (hasOpenTasks)
+                {
+                    return ServiceResult<bool>.Conflict("The project cannot be completed while it has open tasks");
+                }
+
+                project.CompletedAt = DateTime.UtcNow;
+            }
+
+            project.Status = status;
+            await _db.SaveChangesAsync();
+            return ServiceResult<bool>.Ok(true);
+        }
     }
 }
