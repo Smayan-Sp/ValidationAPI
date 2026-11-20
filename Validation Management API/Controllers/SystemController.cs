@@ -54,6 +54,25 @@ namespace Validation_Management_API.Controllers
             return ToActionResult(await computerSystemService.SearchSystem(dto));
         }
 
+        [HttpPatch("{id:int}/deactivate")]
+        public async Task<ActionResult<bool>> DeactivateSystem(int id)
+        {
+            if (id <= 0)
+            {
+                return BadRequest("Id must be greater than 0");
+            }
+            return ToActionResult(await computerSystemService.DeactivateSystem(id));
+        }
+
+        [HttpPatch("{id:int}/restore")]
+        public async Task<ActionResult<bool>> RestoreSystem(int id)
+        {
+            if (id <= 0)
+            {
+                return BadRequest("Id must be greater than 0");
+            }
+            return ToActionResult(await computerSystemService.RestoreSystem(id));
+        }
 
     }
 

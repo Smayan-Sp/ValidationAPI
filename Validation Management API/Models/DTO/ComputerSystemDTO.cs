@@ -5,7 +5,7 @@ namespace Validation_Management_API.Models.DTO
     public class ComputerSystemDTO
     {
         public int Id { get; set; }
-        [MaxLength(100)]
+        [MaxLength(100)] 
         public required string Name { get; set; }
         [MaxLength(100)]
         public required string Code { get; set; }

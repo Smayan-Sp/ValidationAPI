@@ -177,5 +177,48 @@ namespace Validation_Management_API.Services
                 }).ToListAsync();
             return ServiceResult<List<SystemSearchResultDTO>>.Ok(result);
         }
+
+        public async Task<ServiceResult<bool>> DeactivateSystem(int id)
+        {
+            ComputerSystem? computerSystem = await _db.ComputerSystems
+                .Where(s => s.Id == id).FirstOrDefaultAsync();
+
+            if(computerSystem == null)
+            {
+                return ServiceResult<bool>.NotFound("That system does not exist");
+            }
+
+            if (await _db.Projects.AnyAsync(p => 
+            p.Status == ProjectStatus.InProgress &&
+            p.Systems.Any(s => s.Id == computerSystem.Id)))
+                return ServiceResult<bool>.Conflict("This system has an active project and cannot be deactivated");
+
+            if(computerSystem.IsActive == false)
+            {
+                return ServiceResult<bool>.BadRequest("That system is not active");
+            }
+            computerSystem.IsActive = false;
+            await _db.SaveChangesAsync();
+            return ServiceResult<bool>.NoContent();
+        }
+
+        public async Task<ServiceResult<bool>> RestoreSystem(int id)
+        {
+            ComputerSystem? computerSystem = await _db.ComputerSystems
+                .Where(s => s.Id == id).FirstOrDefaultAsync();
+
+            if (computerSystem == null)
+            {
+                return ServiceResult<bool>.NotFound("That system does not exist");
+            }
+
+            if (computerSystem.IsActive == true)
+            {
+                return ServiceResult<bool>.BadRequest("That system is already active");
+            }
+            computerSystem.IsActive = true;
+            await _db.SaveChangesAsync();
+            return ServiceResult<bool>.Ok(true);
+        }
     }
 }

@@ -10,5 +10,7 @@ namespace Validation_Management_API.Services.Interfaces
         Task<ServiceResult<int>> CreateSystem(CreateSystemDTO dto);
         Task<ServiceResult<SystemSummaryDTO>> GetSystemSummary(int id);
         Task<ServiceResult<List<SystemSearchResultDTO>>> SearchSystem(SearchSystemDTO dto);
+        Task<ServiceResult<bool>> DeactivateSystem(int id);
+        Task<ServiceResult<bool>> RestoreSystem(int id);
     }
 }
