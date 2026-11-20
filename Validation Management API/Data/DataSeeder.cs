@@ -5,31 +5,24 @@ using Validation_Management_API.Models.Enums;
 
 namespace Validation_Management_API.Data
 {
-    // Fills an empty database with predictable test data.
-    // Naming rule: "<Thing> N", so Employee 3 is always the third employee, and so on.
-    // Safe to call on every startup: it does nothing if data already exists.
     public static class DataSeeder
     {
         public static async Task SeedAsync(ApplicationDbContext db)
         {
             if (await db.Departments.AnyAsync()) return;
 
-            // .Date keeps Kind = Utc, which Npgsql requires for timestamptz columns.
             var today = DateTime.UtcNow.Date;
 
-            // ---------- Reference data ----------
             var departments = Enumerable.Range(1, 5)
                 .Select(i => new Department { Name = $"Department {i}" }).ToList();
 
             var locations = Enumerable.Range(1, 4)
                 .Select(i => new Location { Name = $"Location {i}" }).ToList();
 
-            // Employee 8 is inactive, to test "deactivated people can't be picked".
             var employees = Enumerable.Range(1, 8)
                 .Select(i => new Employee { Name = $"Employee {i}", IsActive = i != 8 }).ToList();
             var activeEmployees = employees.Where(e => e.IsActive).ToList();
 
-            // ---------- Document catalog ----------
             DocumentList Doc(string name, int days, int authors, int reviewers, int approvers,
                              params DocumentList[] dependsOn) => new()
             {
@@ -51,9 +44,6 @@ namespace Validation_Management_API.Data
             var doc8 = Doc("Document 8", 3, 1, 1, 1, doc7);
             var catalog = new[] { doc1, doc2, doc3, doc4, doc5, doc6, doc7, doc8 };
 
-            // ---------- Systems ----------
-            // System N uses Department/Location/Employee numbers that cycle, so it is easy to predict.
-            // System 8 is inactive.
             var systems = Enumerable.Range(1, 8).Select(i => new ComputerSystem
             {
                 Name = $"System {i}",
@@ -65,7 +55,6 @@ namespace Validation_Management_API.Data
                 CreatedAt = today.AddDays(-120 + i)
             }).ToList();
 
-            // ---------- Projects ----------
             var project1 = new Project
             {
                 Name = "Project 1",
@@ -119,16 +108,12 @@ namespace Validation_Management_API.Data
                 Locations = [locations[2]]
             };
 
-            // ---------- Plan builder ----------
             const ProjectTaskStatus Done = ProjectTaskStatus.Completed;
             const ProjectTaskStatus Doing = ProjectTaskStatus.InProgress;
             const ProjectTaskStatus Todo = ProjectTaskStatus.NotStarted;
 
             var contributorCursor = 0;
 
-            // Adds a document to a project and creates its tasks from the catalog counts.
-            // Tasks split the document's window into three stages: Author, Reviewer, Approver.
-            // IsOverdue follows the same rule the daily job will use: past end date and not completed.
             ProjectDocument AddDocument(Project project, DocumentList template, int startOffset,
                 ProjectTaskStatus author, ProjectTaskStatus reviewer, ProjectTaskStatus approver,
                 bool staffed = true)
@@ -163,7 +148,6 @@ namespace Validation_Management_API.Data
 
                         if (staffed)
                         {
-                            // One mandatory contributor per task; reviewers also get an optional one.
                             task.Contributors.Add(new Contributor
                             {
                                 Employee = activeEmployees[contributorCursor++ % activeEmployees.Count],
@@ -191,8 +175,6 @@ namespace Validation_Management_API.Data
                 return doc;
             }
 
-            // Links documents inside one project using the catalog's dependency rules.
-            // Only documents that are actually in the project get linked.
             void LinkDependencies(Project project)
             {
                 foreach (var doc in project.ProjectDocuments)
@@ -203,8 +185,6 @@ namespace Validation_Management_API.Data
                     }
             }
 
-            // Project 1 (in progress): Documents 1 and 2 done, Document 3 mid-review (reviewer overdue),
-            // Document 4 just started, Document 5 waiting on Document 3.
             AddDocument(project1, doc1, -20, Done, Done, Done);
             AddDocument(project1, doc2, -17, Done, Done, Done);
             AddDocument(project1, doc3, -5, Done, Doing, Todo);
@@ -212,7 +192,6 @@ namespace Validation_Management_API.Data
             AddDocument(project1, doc5, 5, Todo, Todo, Todo);
             LinkDependencies(project1);
 
-            // Project 2 (completed): everything finished.
             AddDocument(project2, doc1, -90, Done, Done, Done);
             AddDocument(project2, doc5, -85, Done, Done, Done);
             AddDocument(project2, doc6, -78, Done, Done, Done);
@@ -220,14 +199,10 @@ namespace Validation_Management_API.Data
             AddDocument(project2, doc8, -62, Done, Done, Done);
             LinkDependencies(project2);
 
-            // Project 3 (planned): nothing started; Document 2's tasks have no contributors yet.
             AddDocument(project3, doc1, 5, Todo, Todo, Todo);
             AddDocument(project3, doc2, 8, Todo, Todo, Todo, staffed: false);
             LinkDependencies(project3);
 
-            // Project 4 (cancelled): no documents.
-
-            // ---------- Validation history ----------
             void AddHistory(ComputerSystem system, ValidationStatus status, int daysAgo, Project? project = null)
                 => system.History!.Add(new ValidationHistory
                 {
@@ -236,30 +211,23 @@ namespace Validation_Management_API.Data
                     Project = project
                 });
 
-            // Every system starts as Pending when it is created.
-            // Dated to match the system's own CreatedAt.
             foreach (var system in systems)
                 AddHistory(system, ValidationStatus.Pending, (int)(today - system.CreatedAt).TotalDays);
 
-            // Systems 1 and 6 are in Project 1 (in progress).
             foreach (var system in new[] { systems[0], systems[5] })
             {
                 AddHistory(system, ValidationStatus.Planning, 25, project1);
                 AddHistory(system, ValidationStatus.InProgress, 20, project1);
             }
 
-            // System 2 finished Project 2.
             AddHistory(systems[1], ValidationStatus.Planning, 95, project2);
             AddHistory(systems[1], ValidationStatus.InProgress, 90, project2);
             AddHistory(systems[1], ValidationStatus.Completed, 32, project2);
 
-            // System 3 is planned in Project 3.
             AddHistory(systems[2], ValidationStatus.Planning, 2, project3);
 
-            // System 5 was planned in Project 4, which was then cancelled.
             AddHistory(systems[4], ValidationStatus.Planning, 65, project4);
 
-            // ---------- Attachments ----------
             Attachment Note(string fileName, string text)
             {
                 var bytes = Encoding.UTF8.GetBytes(text);
@@ -275,7 +243,6 @@ namespace Validation_Management_API.Data
             systems[0].Attachments!.Add(Note("Attachment 1.txt", "Test attachment one for System 1."));
             systems[0].Attachments!.Add(Note("Attachment 2.txt", "Test attachment two for System 1."));
 
-            // ---------- Save everything in one transaction ----------
             db.AddRange(departments);
             db.AddRange(locations);
             db.AddRange(employees);

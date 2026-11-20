@@ -43,5 +43,34 @@ namespace Validation_Management_API.Controllers
             var result = await projectService.SearchProject(dto);
             return ToActionResult(result);
         }
+
+        [HttpPost("{id:int}/clone")]
+        public async Task<ActionResult<int>> CloneProject(int id, CloneProjectDTO dto)
+        {
+            if (id <= 0)
+            {
+                return BadRequest("Id must be greater than 0");
+            }
+
+            var result = await projectService.CloneProject(id, dto);
+
+            if (result.ResultType == Outcome.CreatedAtAction)
+            {
+                return CreatedAtAction(nameof(GetProject), new { id = result.Data }, result.Data);
+            }
+
+            return ToActionResult(result);
+        }
+
+        [HttpGet("{id:int}/dashboard")]
+        public async Task<ActionResult<DashboardDTO>> GetDashboard(int id)
+        {
+            if (id <= 0)
+            {
+                return BadRequest("Id must be greater than 0");
+            }
+
+            return ToActionResult(await projectService.GetDashboard(id));
+        }
     }
 }

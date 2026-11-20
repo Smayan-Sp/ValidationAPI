@@ -7,7 +7,6 @@ using Validation_Management_API.Services.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
 builder.Services.AddDbContext<ApplicationDbContext>(option =>
 {
     option.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
@@ -15,20 +14,18 @@ builder.Services.AddDbContext<ApplicationDbContext>(option =>
 
 builder.Services.AddControllers().AddJsonOptions(o =>
     o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddScoped<IComputerSystemService, ComputerSystemService>();
+builder.Services.AddScoped<IPlanService, PlanService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
 
-    // Development only: apply any pending migrations, then fill an empty database with test data.
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await db.Database.MigrateAsync();

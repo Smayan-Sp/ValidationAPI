@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Query.Internal;
 using Validation_Management_API.Data;
 using Validation_Management_API.Models;
 using Validation_Management_API.Models.DTO;
+using Validation_Management_API.Models.Enums;
 using Validation_Management_API.Services.Interfaces;
 using Validation_Management_API.Services.Results;
 
@@ -117,6 +118,102 @@ namespace Validation_Management_API.Services
             return ServiceResult<int>.CreatedAtAction("Project successfully created with id", project.Id);
         }
 
+        public async Task<ServiceResult<int>> CloneProject(int sourceProjectId, CloneProjectDTO dto)
+        {
+            if (dto.PlannedStartDate.Kind != DateTimeKind.Utc || dto.PlannedEndDate.Kind != DateTimeKind.Utc)
+            {
+                return ServiceResult<int>.BadRequest("Planned dates must be in UTC (for example 2026-12-01T00:00:00Z)");
+            }
+
+            if (dto.PlannedEndDate < dto.PlannedStartDate)
+            {
+                return ServiceResult<int>.BadRequest("Planned end date cannot be before the planned start date");
+            }
+
+            var manager = await _db.Employees.FirstOrDefaultAsync(e => e.Id == dto.ManagerId);
+            if (manager == null)
+            {
+                return ServiceResult<int>.NotFound($"Manager/Employee with id {dto.ManagerId} does not exist");
+            }
+
+            if (!manager.IsActive)
+            {
+                return ServiceResult<int>.BadRequest($"Manager/Employee with id {dto.ManagerId} is inactive");
+            }
+
+            var source = await _db.Projects
+                .Include(p => p.Systems)
+                .Include(p => p.Locations)
+                .Include(p => p.ProjectDocuments).ThenInclude(d => d.Tasks)
+                .Include(p => p.ProjectDocuments).ThenInclude(d => d.DependsOn)
+                .AsSplitQuery()
+                .FirstOrDefaultAsync(p => p.Id == sourceProjectId);
+
+            if (source == null)
+            {
+                return ServiceResult<int>.NotFound("The project to clone does not exist");
+            }
+
+            var inactiveSystemIds = source.Systems.Where(s => !s.IsActive).Select(s => s.Id).ToList();
+            if (inactiveSystemIds.Count > 0)
+            {
+                return ServiceResult<int>.BadRequest($"System ids {string.Join(", ", inactiveSystemIds)} are inactive");
+            }
+
+            var shift = dto.PlannedStartDate - source.PlannedStartDate;
+
+            var project = new Project
+            {
+                Name = dto.Name,
+                ManagerId = dto.ManagerId,
+                ValidationType = source.ValidationType,
+                PlannedStartDate = dto.PlannedStartDate,
+                PlannedEndDate = dto.PlannedEndDate,
+                Status = ProjectStatus.Planned,
+                Systems = source.Systems.ToList(),
+                Locations = source.Locations.ToList()
+            };
+
+            var copies = new Dictionary<int, ProjectDocument>();
+
+            foreach (var document in source.ProjectDocuments)
+            {
+                var copy = new ProjectDocument
+                {
+                    DocumentListId = document.DocumentListId,
+                    PlannedStartDate = document.PlannedStartDate + shift,
+                    PlannedEndDate = document.PlannedEndDate + shift,
+                    Tasks = document.Tasks.Select(t => new ProjectTask
+                    {
+                        Type = t.Type,
+                        Number = t.Number,
+                        PlannedStartDate = t.PlannedStartDate + shift,
+                        PlannedEndDate = t.PlannedEndDate + shift,
+                        Status = ProjectTaskStatus.NotStarted,
+                        IsOverdue = false
+                    }).ToList()
+                };
+
+                copies[document.Id] = copy;
+                project.ProjectDocuments.Add(copy);
+            }
+
+            foreach (var document in source.ProjectDocuments)
+            {
+                foreach (var dependency in document.DependsOn)
+                {
+                    if (copies.TryGetValue(dependency.Id, out var target))
+                    {
+                        copies[document.Id].DependsOn.Add(target);
+                    }
+                }
+            }
+
+            await _db.AddAsync(project);
+            await _db.SaveChangesAsync();
+            return ServiceResult<int>.CreatedAtAction("Project successfully cloned with id", project.Id);
+        }
+
         public async Task<ServiceResult<List<ProjectSummaryDTO>>>SearchProject(SearchProjectDTO dto)
         {
             IQueryable<Project> query = _db.Projects.AsNoTracking();
@@ -180,6 +277,47 @@ namespace Validation_Management_API.Services
                 }).ToListAsync();
 
             return ServiceResult<List<ProjectSummaryDTO>>.Ok(result);
+        }
+
+        public async Task<ServiceResult<DashboardDTO>> GetDashboard(int id)
+        {
+            var data = await _db.Projects
+                .AsNoTracking()
+                .Where(p => p.Id == id)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Name,
+                    DocumentCount = p.ProjectDocuments.Count(),
+                    NotStarted = p.ProjectDocuments.SelectMany(d => d.Tasks).Count(t => t.Status == ProjectTaskStatus.NotStarted),
+                    InProgress = p.ProjectDocuments.SelectMany(d => d.Tasks).Count(t => t.Status == ProjectTaskStatus.InProgress),
+                    Completed = p.ProjectDocuments.SelectMany(d => d.Tasks).Count(t => t.Status == ProjectTaskStatus.Completed),
+                    Overdue = p.ProjectDocuments.SelectMany(d => d.Tasks).Count(t => t.IsOverdue)
+                })
+                .FirstOrDefaultAsync();
+
+            if (data == null)
+                return ServiceResult<DashboardDTO>.NotFound("The project does not exist");
+
+            var totalTasks = data.NotStarted + data.InProgress + data.Completed;
+            var percentComplete = totalTasks == 0 ? 0m : Math.Round(data.Completed * 100m / totalTasks, 2);
+
+            var dashboard = new DashboardDTO
+            {
+                ProjectId = data.Id,
+                ProjectName = data.Name,
+                DocumentCount = data.DocumentCount,
+                TaskCounts = new TaskCountsDTO
+                {
+                    NotStarted = data.NotStarted,
+                    InProgress = data.InProgress,
+                    Completed = data.Completed
+                },
+                OverdueTaskCount = data.Overdue,
+                PercentComplete = percentComplete
+            };
+
+            return ServiceResult<DashboardDTO>.Ok(dashboard);
         }
     }
 }

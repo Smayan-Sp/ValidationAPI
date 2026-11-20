@@ -2,8 +2,6 @@
 
 namespace Validation_Management_API.Models
 {
-    // A project's own copy of a document taken from the DocumentList catalog.
-    // The same catalog document can only appear once per project.
     [Index(nameof(ProjectId), nameof(DocumentListId), IsUnique = true)]
     public class ProjectDocument
     {
