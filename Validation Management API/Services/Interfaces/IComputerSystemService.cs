@@ -9,8 +9,13 @@ namespace Validation_Management_API.Services.Interfaces
         Task<ServiceResult<ComputerSystemDTO>> GetSystem(int id);
         Task<ServiceResult<int>> CreateSystem(CreateSystemDTO dto);
         Task<ServiceResult<SystemSummaryDTO>> GetSystemSummary(int id);
-        Task<ServiceResult<List<SystemSearchResultDTO>>> SearchSystem(SearchSystemDTO dto);
+        Task<ServiceResult<PagedResult<SystemSearchResultDTO>>> SearchSystem(SearchSystemDTO dto);
         Task<ServiceResult<bool>> DeactivateSystem(int id);
         Task<ServiceResult<bool>> RestoreSystem(int id);
+        Task<ServiceResult<int>> UploadAttachment(int id, IFormFile file);
+        Task<ServiceResult<List<AttachmentDTO>>> ListAttachments(int id);
+        Task<ServiceResult<AttachmentFileDTO>> DownloadAttachment(int id, int attachmentId);
+        Task<ServiceResult<bool>> DeleteAttachment(int id, int attachmentId);
+        Task<ServiceResult<bool>> UpdateSystem(int id, UpdateSystemDTO dto);
     }
 }

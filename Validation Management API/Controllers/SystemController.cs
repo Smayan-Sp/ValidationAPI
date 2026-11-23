@@ -49,7 +49,7 @@ namespace Validation_Management_API.Controllers
         }
 
         [HttpGet("Search")]
-        public async Task<ActionResult<List<SystemSearchResultDTO>>> SearchSystem([FromQuery] SearchSystemDTO dto)
+        public async Task<ActionResult<PagedResult<SystemSearchResultDTO>>> SearchSystem([FromQuery] SearchSystemDTO dto)
         {
             return ToActionResult(await computerSystemService.SearchSystem(dto));
         }
@@ -62,6 +62,64 @@ namespace Validation_Management_API.Controllers
                 return BadRequest("Id must be greater than 0");
             }
             return ToActionResult(await computerSystemService.DeactivateSystem(id));
+        }
+
+        [HttpPatch("{id:int}")]
+        public async Task<ActionResult<bool>> UpdateSystem(int id, UpdateSystemDTO dto)
+        {
+            if (id <= 0)
+            {
+                return BadRequest("Id must be greater than 0");
+            }
+            return ToActionResult(await computerSystemService.UpdateSystem(id, dto));
+        }
+
+        [HttpPost("{id:int}/attachments")]
+        public async Task<ActionResult<int>> UploadAttachment(int id, IFormFile file)
+        {
+            if (id <= 0)
+            {
+                return BadRequest("Id must be greater than 0");
+            }
+            return ToActionResult(await computerSystemService.UploadAttachment(id, file));
+        }
+
+        [HttpGet("{id:int}/attachments")]
+        public async Task<ActionResult<List<AttachmentDTO>>> ListAttachments(int id)
+        {
+            if (id <= 0)
+            {
+                return BadRequest("Id must be greater than 0");
+            }
+            return ToActionResult(await computerSystemService.ListAttachments(id));
+        }
+
+        [HttpGet("{id:int}/attachments/{attachmentId:int}")]
+        public async Task<IActionResult> DownloadAttachment(int id, int attachmentId)
+        {
+            if (id <= 0 || attachmentId <= 0)
+            {
+                return BadRequest("Ids must be greater than 0");
+            }
+
+            var result = await computerSystemService.DownloadAttachment(id, attachmentId);
+
+            if (result.ResultType == Outcome.Ok)
+            {
+                return File(result.Data!.Content, result.Data.ContentType, result.Data.OriginalName);
+            }
+
+            return ToActionResult(result).Result!;
+        }
+
+        [HttpDelete("{id:int}/attachments/{attachmentId:int}")]
+        public async Task<ActionResult<bool>> DeleteAttachment(int id, int attachmentId)
+        {
+            if (id <= 0 || attachmentId <= 0)
+            {
+                return BadRequest("Ids must be greater than 0");
+            }
+            return ToActionResult(await computerSystemService.DeleteAttachment(id, attachmentId));
         }
 
         [HttpPatch("{id:int}/restore")]

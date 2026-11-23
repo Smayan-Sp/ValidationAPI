@@ -8,9 +8,10 @@ namespace Validation_Management_API.Services.Interfaces
     {
         Task<ServiceResult<ProjectDTO>> GetProject(int id);
         Task<ServiceResult<int>> CreateProject(CreateProjectDTO dto);
-        Task<ServiceResult<List<ProjectSummaryDTO>>>SearchProject(SearchProjectDTO dto);
+        Task<ServiceResult<PagedResult<ProjectSummaryDTO>>> SearchProject(SearchProjectDTO dto);
         Task<ServiceResult<DashboardDTO>> GetDashboard(int id);
         Task<ServiceResult<int>> CloneProject(int sourceProjectId, CloneProjectDTO dto);
         Task<ServiceResult<bool>> ChangeStatus(int id, ProjectStatus status);
+        Task<ServiceResult<bool>> UpdateProject(int id, UpdateProjectDTO dto);
     }
 }

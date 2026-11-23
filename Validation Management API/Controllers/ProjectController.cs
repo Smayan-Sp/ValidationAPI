@@ -39,7 +39,7 @@ namespace Validation_Management_API.Controllers
         }
 
         [HttpGet("Search")]
-        public async Task<ActionResult<List<ProjectSummaryDTO>>> SearchProject([FromQuery] SearchProjectDTO dto)
+        public async Task<ActionResult<PagedResult<ProjectSummaryDTO>>> SearchProject([FromQuery] SearchProjectDTO dto)
         {
             var result = await projectService.SearchProject(dto);
             return ToActionResult(result);
@@ -72,6 +72,16 @@ namespace Validation_Management_API.Controllers
             }
 
             return ToActionResult(await projectService.GetDashboard(id));
+        }
+
+        [HttpPatch("{id:int}")]
+        public async Task<ActionResult<bool>> UpdateProject(int id, UpdateProjectDTO dto)
+        {
+            if (id <= 0)
+            {
+                return BadRequest("Id must be greater than 0");
+            }
+            return ToActionResult(await projectService.UpdateProject(id, dto));
         }
 
         [HttpPatch("{id:int}/status")]

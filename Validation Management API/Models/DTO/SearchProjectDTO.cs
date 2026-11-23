@@ -2,7 +2,7 @@
 
 namespace Validation_Management_API.Models.DTO
 {
-    public class SearchProjectDTO
+    public class SearchProjectDTO : PagedRequest
     {
         public string? Name { get; set; }
         public ProjectStatus? Status { get; set; }
@@ -14,5 +14,7 @@ namespace Validation_Management_API.Models.DTO
         public DateTime? PlannedTo { get; set; }
         public DateTime? CreatedFrom { get; set; }
         public DateTime? CreatedTo { get; set; }
+        public ProjectSortBy SortBy { get; set; } = ProjectSortBy.Name;
+        public bool Descending { get; set; }
     }
 }

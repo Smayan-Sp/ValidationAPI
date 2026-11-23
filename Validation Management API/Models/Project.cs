@@ -9,7 +9,7 @@ namespace Validation_Management_API.Models
         [MaxLength(100)]
         public required string Name { get; set; }
         public List<Location> Locations { get; set; } = [];
-        public List<ComputerSystem> Systems { get; set; } = [];
+        public List<ComputerSystem> Systems { get; set; } = []; 
         public List<ProjectDocument> ProjectDocuments { get; set; } = [];
         public ProjectValidationType ValidationType { get; set; }
         public Employee Manager { get; set; } = null!;

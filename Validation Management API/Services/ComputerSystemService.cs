@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Validation_Management_API.Data;
+using Validation_Management_API.Helpers;
 using Validation_Management_API.Models;
 using Validation_Management_API.Models.DTO;
 using Validation_Management_API.Models.Enums;
@@ -18,40 +19,32 @@ namespace Validation_Management_API.Services
         }
         public async Task<ServiceResult<ComputerSystemDTO>> GetSystem(int id)
         {
-            try
-            {
-                var dto = await _db.ComputerSystems
-                    .AsNoTracking()
-                    .Where(u => u.Id == id)
-                    .Select(u => new ComputerSystemDTO
-                    {
-                        Id = u.Id,
-                        Name = u.Name,
-                        Code = u.Code,
-                        Owner = new IdNameDTO { Id = u.Owner.Id, Name = u.Owner.Name },
-                        Location = new IdNameDTO { Id = u.Location.Id, Name = u.Location.Name },
-                        Department = new IdNameDTO { Id = u.Department.Id, Name = u.Department.Name },
-                        ValidationHistory = u.History!.Select(v => new ValidationHistoryDTO
-                        {
-                            Id = v.Id,
-                            Status = v.Status,
-                            ChangedAt = v.ChangedAt,
-                            Project = v.Project == null ? null : v.Project.Name
-                        }).ToList()
-                    })
-                    .FirstOrDefaultAsync();
-
-                if (dto == null)
+            var dto = await _db.ComputerSystems
+                .AsNoTracking()
+                .Where(u => u.Id == id)
+                .Select(u => new ComputerSystemDTO
                 {
-                    return ServiceResult<ComputerSystemDTO>.NotFound("System does not exist");
-                }
-                return ServiceResult<ComputerSystemDTO>.Ok(dto);
-            }
-            catch (Exception) 
+                    Id = u.Id,
+                    Name = u.Name,
+                    Code = u.Code,
+                    Owner = new IdNameDTO { Id = u.Owner.Id, Name = u.Owner.Name },
+                    Location = new IdNameDTO { Id = u.Location.Id, Name = u.Location.Name },
+                    Department = new IdNameDTO { Id = u.Department.Id, Name = u.Department.Name },
+                    ValidationHistory = u.History!.Select(v => new ValidationHistoryDTO
+                    {
+                        Id = v.Id,
+                        Status = v.Status,
+                        ChangedAt = v.ChangedAt,
+                        Project = v.Project == null ? null : v.Project.Name
+                    }).ToList()
+                })
+                .FirstOrDefaultAsync();
+
+            if (dto == null)
             {
-                return ServiceResult<ComputerSystemDTO>.InternalServerError($"Server failed to fetch your data");
+                return ServiceResult<ComputerSystemDTO>.NotFound("System does not exist");
             }
-            
+            return ServiceResult<ComputerSystemDTO>.Ok(dto);
         }
 
         public async Task<ServiceResult<int>> CreateSystem(CreateSystemDTO dto)
@@ -106,7 +99,7 @@ namespace Validation_Management_API.Services
             return ServiceResult<SystemSummaryDTO>.Ok(dto);
         }
 
-        public async Task<ServiceResult<List<SystemSearchResultDTO>>> SearchSystem(SearchSystemDTO dto)
+        public async Task<ServiceResult<PagedResult<SystemSearchResultDTO>>> SearchSystem(SearchSystemDTO dto)
         {
             IQueryable<ComputerSystem> query = _db.ComputerSystems.AsNoTracking();
 
@@ -160,7 +153,7 @@ namespace Validation_Management_API.Services
             };
 
             var result = await ordered.ThenBy(s => s.Id)
-                .Select(s => new SystemSearchResultDTO
+                .ToPagedResultAsync(dto, s => new SystemSearchResultDTO
                 {
                     Id = s.Id,
                     Name = s.Name,
@@ -174,8 +167,9 @@ namespace Validation_Management_API.Services
                     .Select(h => h.Status)
                     .FirstOrDefault(),
                     CreatedAt = s.CreatedAt
-                }).ToListAsync();
-            return ServiceResult<List<SystemSearchResultDTO>>.Ok(result);
+                });
+
+            return ServiceResult<PagedResult<SystemSearchResultDTO>>.Ok(result);
         }
 
         public async Task<ServiceResult<bool>> DeactivateSystem(int id)
@@ -219,6 +213,168 @@ namespace Validation_Management_API.Services
             computerSystem.IsActive = true;
             await _db.SaveChangesAsync();
             return ServiceResult<bool>.Ok(true);
+        }
+
+        private const long MaxAttachmentBytes = 5 * 1024 * 1024;
+        private static readonly string[] AllowedAttachmentExtensions =
+            [".pdf", ".png", ".jpg", ".jpeg", ".txt", ".docx", ".xlsx"];
+
+        public async Task<ServiceResult<int>> UploadAttachment(int id, IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return ServiceResult<int>.BadRequest("Please attach a non-empty file");
+            }
+
+            if (file.Length > MaxAttachmentBytes)
+            {
+                return ServiceResult<int>.BadRequest("The file must be 5 MB or smaller");
+            }
+
+            string fileName = Path.GetFileName(file.FileName);
+
+            if (fileName.Length > 255)
+            {
+                return ServiceResult<int>.BadRequest("The file name must be 255 characters or fewer");
+            }
+
+            string extension = Path.GetExtension(fileName).ToLowerInvariant();
+            if (!AllowedAttachmentExtensions.Contains(extension))
+            {
+                return ServiceResult<int>.BadRequest(
+                    $"File type not allowed. Allowed types: {string.Join(", ", AllowedAttachmentExtensions)}");
+            }
+
+            bool systemExists = await _db.ComputerSystems.AnyAsync(c => c.Id == id);
+            if (!systemExists)
+            {
+                return ServiceResult<int>.NotFound("That system does not exist");
+            }
+
+            using var ms = new MemoryStream();
+            await file.CopyToAsync(ms);
+
+            Attachment attachment = new Attachment
+            {
+                OriginalName = fileName,
+                ContentSize = file.Length,
+                ContentType = file.ContentType,
+                Content = ms.ToArray(),
+                ComputerId = id
+            };
+            _db.Attachments.Add(attachment);
+            await _db.SaveChangesAsync();
+
+            return ServiceResult<int>.Ok(attachment.Id);
+        }
+
+        public async Task<ServiceResult<List<AttachmentDTO>>> ListAttachments(int id)
+        {
+            if (!await _db.ComputerSystems.AnyAsync(c => c.Id == id))
+            {
+                return ServiceResult<List<AttachmentDTO>>.NotFound("That system does not exist");
+            }
+
+            var attachments = await _db.Attachments
+                .AsNoTracking()
+                .Where(a => a.ComputerId == id)
+                .OrderBy(a => a.UploadedAt)
+                .ThenBy(a => a.Id)
+                .Select(a => new AttachmentDTO
+                {
+                    Id = a.Id,
+                    OriginalName = a.OriginalName,
+                    ContentType = a.ContentType,
+                    ContentSize = a.ContentSize,
+                    UploadedAt = a.UploadedAt
+                }).ToListAsync();
+
+            return ServiceResult<List<AttachmentDTO>>.Ok(attachments);
+        }
+
+        public async Task<ServiceResult<AttachmentFileDTO>> DownloadAttachment(int id, int attachmentId)
+        {
+            var file = await _db.Attachments
+                .AsNoTracking()
+                .Where(a => a.Id == attachmentId && a.ComputerId == id)
+                .Select(a => new AttachmentFileDTO
+                {
+                    OriginalName = a.OriginalName,
+                    ContentType = a.ContentType,
+                    Content = a.Content
+                }).FirstOrDefaultAsync();
+
+            if (file == null)
+            {
+                return ServiceResult<AttachmentFileDTO>.NotFound("That attachment does not exist");
+            }
+
+            return ServiceResult<AttachmentFileDTO>.Ok(file);
+        }
+
+        public async Task<ServiceResult<bool>> DeleteAttachment(int id, int attachmentId)
+        {
+            Attachment? attachment = await _db.Attachments
+                .Where(a => a.Id == attachmentId && a.ComputerId == id)
+                .FirstOrDefaultAsync();
+
+            if (attachment == null)
+            {
+                return ServiceResult<bool>.NotFound("That attachment does not exist");
+            }
+
+            _db.Attachments.Remove(attachment);
+            await _db.SaveChangesAsync();
+
+            return ServiceResult<bool>.NoContent();
+        }
+
+        public async Task<ServiceResult<bool>> UpdateSystem(int id, UpdateSystemDTO dto)
+        {
+            ComputerSystem? system = await _db.ComputerSystems.FirstOrDefaultAsync(s => s.Id == id);
+
+            if (system == null)
+            {
+                return ServiceResult<bool>.NotFound("That system does not exist");
+            }
+
+            if (dto.Name != null)
+            {
+                if (string.IsNullOrWhiteSpace(dto.Name))
+                {
+                    return ServiceResult<bool>.BadRequest("Name cannot be empty");
+                }
+
+                if (await _db.ComputerSystems.AnyAsync(s => s.Name == dto.Name && s.Id != id))
+                {
+                    return ServiceResult<bool>.Conflict($"A system named {dto.Name} already exists");
+                }
+
+                system.Name = dto.Name;
+            }
+
+            if (dto.DepartmentId != null)
+            {
+                if (!await _db.Departments.AnyAsync(d => d.Id == dto.DepartmentId))
+                {
+                    return ServiceResult<bool>.NotFound($"Department with id {dto.DepartmentId} does not exist");
+                }
+
+                system.DepartmentId = dto.DepartmentId.Value;
+            }
+
+            if (dto.OwnerId != null)
+            {
+                if (!await _db.Employees.AnyAsync(e => e.Id == dto.OwnerId))
+                {
+                    return ServiceResult<bool>.NotFound($"Owner/Employee with id {dto.OwnerId} does not exist");
+                }
+
+                system.OwnerId = dto.OwnerId.Value;
+            }
+
+            await _db.SaveChangesAsync();
+            return ServiceResult<bool>.NoContent();
         }
     }
 }

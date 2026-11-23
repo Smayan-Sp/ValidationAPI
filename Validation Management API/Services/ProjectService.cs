@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query.Internal;
 using Validation_Management_API.Data;
+using Validation_Management_API.Helpers;
 using Validation_Management_API.Models;
 using Validation_Management_API.Models.DTO;
 using Validation_Management_API.Models.Enums;
@@ -214,7 +215,7 @@ namespace Validation_Management_API.Services
             return ServiceResult<int>.CreatedAtAction("Project successfully cloned with id", project.Id);
         }
 
-        public async Task<ServiceResult<List<ProjectSummaryDTO>>>SearchProject(SearchProjectDTO dto)
+        public async Task<ServiceResult<PagedResult<ProjectSummaryDTO>>> SearchProject(SearchProjectDTO dto)
         {
             IQueryable<Project> query = _db.Projects.AsNoTracking();
 
@@ -259,10 +260,21 @@ namespace Validation_Management_API.Services
                 query = query.Where(p => p.CreatedAt <= dto.CreatedTo);
             }
 
-             
-            var result = await query
-                .OrderBy(u => u.Name)
-                .Select(p => new ProjectSummaryDTO
+            IOrderedQueryable<Project> ordered = (dto.SortBy, dto.Descending) switch
+            {
+                (ProjectSortBy.Status, false) => query.OrderBy(p => p.Status),
+                (ProjectSortBy.Status, true) => query.OrderByDescending(p => p.Status),
+                (ProjectSortBy.PlannedStartDate, false) => query.OrderBy(p => p.PlannedStartDate),
+                (ProjectSortBy.PlannedStartDate, true) => query.OrderByDescending(p => p.PlannedStartDate),
+                (ProjectSortBy.CreatedAt, false) => query.OrderBy(p => p.CreatedAt),
+                (ProjectSortBy.CreatedAt, true) => query.OrderByDescending(p => p.CreatedAt),
+                (_, true) => query.OrderByDescending(p => p.Name),
+                _ => query.OrderBy(p => p.Name)
+            };
+
+            var result = await ordered
+                .ThenBy(p => p.Id)
+                .ToPagedResultAsync(dto, p => new ProjectSummaryDTO
                 {
                     Id = p.Id,
                     Name = p.Name,
@@ -274,9 +286,9 @@ namespace Validation_Management_API.Services
                     CreatedAt = p.CreatedAt,
                     Systems = p.Systems.Select(s => new IdNameDTO { Id = s.Id, Name = s.Name }).ToList(),
                     Locations = p.Locations.Select(l => new IdNameDTO { Id = l.Id, Name = l.Name }).ToList()
-                }).ToListAsync();
+                });
 
-            return ServiceResult<List<ProjectSummaryDTO>>.Ok(result);
+            return ServiceResult<PagedResult<ProjectSummaryDTO>>.Ok(result);
         }
 
         public async Task<ServiceResult<DashboardDTO>> GetDashboard(int id)
@@ -360,6 +372,104 @@ namespace Validation_Management_API.Services
             project.Status = status;
             await _db.SaveChangesAsync();
             return ServiceResult<bool>.Ok(true);
+        }
+
+        public async Task<ServiceResult<bool>> UpdateProject(int id, UpdateProjectDTO dto)
+        {
+            Project? project = await _db.Projects
+                .Include(p => p.Systems)
+                .Include(p => p.Locations)
+                .FirstOrDefaultAsync(p => p.Id == id);
+
+            if (project == null)
+            {
+                return ServiceResult<bool>.NotFound("That project does not exist");
+            }
+
+            if (dto.Name != null)
+            {
+                if (string.IsNullOrWhiteSpace(dto.Name))
+                {
+                    return ServiceResult<bool>.BadRequest("Name cannot be empty");
+                }
+
+                project.Name = dto.Name;
+            }
+
+            if ((dto.PlannedStartDate != null && dto.PlannedStartDate.Value.Kind != DateTimeKind.Utc) ||
+                (dto.PlannedEndDate != null && dto.PlannedEndDate.Value.Kind != DateTimeKind.Utc))
+            {
+                return ServiceResult<bool>.BadRequest("Planned dates must be in UTC (for example 2026-12-01T00:00:00Z)");
+            }
+
+            DateTime newStart = dto.PlannedStartDate ?? project.PlannedStartDate;
+            DateTime newEnd = dto.PlannedEndDate ?? project.PlannedEndDate;
+
+            if (newEnd < newStart)
+            {
+                return ServiceResult<bool>.BadRequest("Planned end date cannot be before the planned start date");
+            }
+
+            project.PlannedStartDate = newStart;
+            project.PlannedEndDate = newEnd;
+
+            if (dto.ManagerId != null)
+            {
+                Employee? manager = await _db.Employees.FirstOrDefaultAsync(e => e.Id == dto.ManagerId);
+
+                if (manager == null)
+                {
+                    return ServiceResult<bool>.NotFound($"Manager/Employee with id {dto.ManagerId} does not exist");
+                }
+
+                if (!manager.IsActive)
+                {
+                    return ServiceResult<bool>.BadRequest($"Manager/Employee with id {dto.ManagerId} is inactive");
+                }
+
+                project.ManagerId = manager.Id;
+            }
+
+            if (dto.SystemIds != null)
+            {
+                List<ComputerSystem> newSystems = await _db.ComputerSystems
+                    .Where(s => dto.SystemIds.Contains(s.Id)).ToListAsync();
+
+                var missingSystemIds = dto.SystemIds.Distinct().Except(newSystems.Select(s => s.Id)).ToList();
+                if (missingSystemIds.Count > 0)
+                {
+                    return ServiceResult<bool>.NotFound($"System ids {string.Join(", ", missingSystemIds)} do not exist");
+                }
+
+                var inactiveSystemIds = newSystems
+                    .Where(s => !s.IsActive && !project.Systems.Any(x => x.Id == s.Id))
+                    .Select(s => s.Id).ToList();
+                if (inactiveSystemIds.Count > 0)
+                {
+                    return ServiceResult<bool>.BadRequest($"System ids {string.Join(", ", inactiveSystemIds)} are inactive");
+                }
+
+                project.Systems.RemoveAll(s => !dto.SystemIds.Contains(s.Id));
+                project.Systems.AddRange(newSystems.Where(s => !project.Systems.Any(x => x.Id == s.Id)));
+            }
+
+            if (dto.LocationIds != null)
+            {
+                List<Location> newLocations = await _db.Locations
+                    .Where(l => dto.LocationIds.Contains(l.Id)).ToListAsync();
+
+                var missingLocationIds = dto.LocationIds.Distinct().Except(newLocations.Select(l => l.Id)).ToList();
+                if (missingLocationIds.Count > 0)
+                {
+                    return ServiceResult<bool>.NotFound($"Location ids {string.Join(", ", missingLocationIds)} do not exist");
+                }
+
+                project.Locations.RemoveAll(l => !dto.LocationIds.Contains(l.Id));
+                project.Locations.AddRange(newLocations.Where(l => !project.Locations.Any(x => x.Id == l.Id)));
+            }
+
+            await _db.SaveChangesAsync();
+            return ServiceResult<bool>.NoContent();
         }
     }
 }
