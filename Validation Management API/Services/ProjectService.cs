@@ -54,6 +54,11 @@ namespace Validation_Management_API.Services
 
         public async Task<ServiceResult<int>>CreateProject(CreateProjectDTO dto)
         {
+            if (string.IsNullOrWhiteSpace(dto.Name))
+            {
+                return ServiceResult<int>.BadRequest("Name cannot be empty");
+            }
+
             if (dto.PlannedStartDate.Kind != DateTimeKind.Utc || dto.PlannedEndDate.Kind != DateTimeKind.Utc)
             {
                 return ServiceResult<int>.BadRequest("Planned dates must be in UTC (for example 2026-12-01T00:00:00Z)");
@@ -120,6 +125,11 @@ namespace Validation_Management_API.Services
 
         public async Task<ServiceResult<int>> CloneProject(int sourceProjectId, CloneProjectDTO dto)
         {
+            if (string.IsNullOrWhiteSpace(dto.Name))
+            {
+                return ServiceResult<int>.BadRequest("Name cannot be empty");
+            }
+
             if (dto.PlannedStartDate.Kind != DateTimeKind.Utc || dto.PlannedEndDate.Kind != DateTimeKind.Utc)
             {
                 return ServiceResult<int>.BadRequest("Planned dates must be in UTC (for example 2026-12-01T00:00:00Z)");
@@ -161,6 +171,14 @@ namespace Validation_Management_API.Services
             }
 
             var shift = dto.PlannedStartDate - source.PlannedStartDate;
+
+            bool planFits = source.ProjectDocuments.All(d =>
+                d.PlannedEndDate + shift <= dto.PlannedEndDate);
+
+            if (!planFits)
+            {
+                return ServiceResult<int>.BadRequest("The cloned plan doesn't fit inside the new planned dates. Use a longer date range");
+            }
 
             var project = new Project
             {
@@ -220,7 +238,7 @@ namespace Validation_Management_API.Services
 
             if (!string.IsNullOrWhiteSpace(dto.Name))
             {
-                query = query.Where(p => p.Name.Contains(dto.Name));
+                query = query.Where(p => EF.Functions.ILike(p.Name, $"%{dto.Name}%"));
             }
             if (dto.Status != null)
             {
@@ -244,11 +262,11 @@ namespace Validation_Management_API.Services
             }
             if (dto.PlannedFrom != null)
             {
-                query = query.Where(p => p.PlannedEndDate >= dto.PlannedFrom);
+                query = query.Where(p => p.PlannedStartDate >= dto.PlannedFrom);
             }
             if (dto.PlannedTo != null)
             {
-                query = query.Where(p => p.PlannedStartDate <= dto.PlannedTo);
+                query = query.Where(p => p.PlannedEndDate <= dto.PlannedTo);
             }
             if (dto.CreatedFrom != null)
             {
@@ -437,6 +455,16 @@ namespace Validation_Management_API.Services
             if (newEnd < newStart)
             {
                 return ServiceResult<bool>.BadRequest("Planned end date cannot be before the planned start date");
+            }
+
+            bool datesChanged = newStart != project.PlannedStartDate || newEnd != project.PlannedEndDate;
+
+            bool documentsOutside = datesChanged && await _db.ProjectDocuments.AnyAsync(d =>
+                d.ProjectId == id && (d.PlannedStartDate < newStart || d.PlannedEndDate > newEnd));
+
+            if (documentsOutside)
+            {
+                return ServiceResult<bool>.Conflict("Some documents in the plan fall outside the new planned dates");
             }
 
             project.PlannedStartDate = newStart;

@@ -119,6 +119,12 @@ namespace Validation_Management_API.Services
                     PlannedEndDate = start.AddDays(template.Duration)
                 };
 
+                if (document.PlannedStartDate < project.PlannedStartDate || document.PlannedEndDate > project.PlannedEndDate)
+                {
+                    return ServiceResult<AddPlanDocumentsResultDTO>.BadRequest(
+                        $"{template.Name} would run from {document.PlannedStartDate:yyyy-MM-dd} to {document.PlannedEndDate:yyyy-MM-dd}, which is outside the project's planned dates ({project.PlannedStartDate:yyyy-MM-dd} to {project.PlannedEndDate:yyyy-MM-dd})");
+                }
+
                 int stageDays = Math.Max(1, template.Duration / 3);
 
                 void AddTasks(TaskType type, int count, int stageIndex)
@@ -150,13 +156,13 @@ namespace Validation_Management_API.Services
             {
                 foreach (ProjectDocument other in project.ProjectDocuments.Where(d => d != newDocument))
                 {
-                    bool newNeedsOther = newDocument.DocumentList.DependsOn.Any(r => r.Id == other.DocumentListId);
+                    bool newNeedsOther = newDocument.DocumentList.DependsOn.Any(r => r.Id == other.DocumentList.Id);
                     if (newNeedsOther && !newDocument.DependsOn.Contains(other))
                     {
                         newDocument.DependsOn.Add(other);
                     }
 
-                    bool otherNeedsNew = other.DocumentList.DependsOn.Any(r => r.Id == newDocument.DocumentListId);
+                    bool otherNeedsNew = other.DocumentList.DependsOn.Any(r => r.Id == newDocument.DocumentList.Id);
                     if (otherNeedsNew && !other.DependsOn.Contains(newDocument))
                     {
                         other.DependsOn.Add(newDocument);
@@ -203,17 +209,17 @@ namespace Validation_Management_API.Services
 
         public async Task<ServiceResult<bool>> UpdateTask(int projectId, int taskId, int callerEmployeeId, UpdateTaskDTO dto)
         {
-            int? managerId = await _db.Projects
+            var projectInfo = await _db.Projects
                 .Where(p => p.Id == projectId)
-                .Select(p => (int?)p.ManagerId)
+                .Select(p => new { p.ManagerId, p.PlannedStartDate, p.PlannedEndDate })
                 .FirstOrDefaultAsync();
 
-            if (managerId == null)
+            if (projectInfo == null)
             {
                 return ServiceResult<bool>.NotFound("That project does not exist");
             }
 
-            if (managerId != callerEmployeeId)
+            if (projectInfo.ManagerId != callerEmployeeId)
             {
                 return ServiceResult<bool>.Forbidden("Only the project manager can update this project's tasks");
             }
@@ -259,6 +265,11 @@ namespace Validation_Management_API.Services
 
                 if (end > document.PlannedEndDate)
                     document.PlannedEndDate = end;
+            }
+
+            if (start < projectInfo.PlannedStartDate || end > projectInfo.PlannedEndDate)
+            {
+                return ServiceResult<bool>.BadRequest($"The task dates must stay inside the project's planned dates ({projectInfo.PlannedStartDate:yyyy-MM-dd} to {projectInfo.PlannedEndDate:yyyy-MM-dd})");
             }
 
             task.PlannedStartDate = start;

@@ -10,11 +10,11 @@ namespace Validation_Management_API.Models.DTO
         [Required]
         [EmailAddress]
         [MaxLength(200)]
-        public required string Email { get; set; }
+        public string Email { get; set; } = string.Empty;
 
         [Required]
         [MinLength(8)]
         [MaxLength(100)]
-        public required string Password { get; set; }
+        public string Password { get; set; } = string.Empty;
     }
 }

@@ -49,19 +49,45 @@ namespace Validation_Management_API.Services
 
         public async Task<ServiceResult<int>> CreateSystem(CreateSystemDTO dto)
         {
+            if (string.IsNullOrWhiteSpace(dto.Name))
+            {
+                return ServiceResult<int>.BadRequest("Name cannot be empty");
+            }
 
-            if(!await _db.Departments.AnyAsync(u => u.Id == dto.DepartmentId))
+            if (string.IsNullOrWhiteSpace(dto.Code))
+            {
+                return ServiceResult<int>.BadRequest("Code cannot be empty");
+            }
+
+            if (!await _db.Departments.AnyAsync(u => u.Id == dto.DepartmentId))
             {
                 return ServiceResult<int>.NotFound($"Department with id {dto.DepartmentId} does not exist");
             }
 
-            if(!await _db.Locations.AnyAsync(u =>u.Id == dto.LocationId))
+            if (!await _db.Locations.AnyAsync(u => u.Id == dto.LocationId))
             {
-                return ServiceResult<int>.NotFound($"Locaation with id {dto.LocationId} does not exist");
+                return ServiceResult<int>.NotFound($"Location with id {dto.LocationId} does not exist");
             }
-            if (!await _db.Employees.AnyAsync(u => u.Id == dto.OwnerId))
+
+            Employee? owner = await _db.Employees.FirstOrDefaultAsync(u => u.Id == dto.OwnerId);
+            if (owner == null)
             {
                 return ServiceResult<int>.NotFound($"Owner/Employee with id {dto.OwnerId} does not exist");
+            }
+
+            if (!owner.IsActive)
+            {
+                return ServiceResult<int>.BadRequest($"Owner/Employee with id {dto.OwnerId} is inactive");
+            }
+
+            if (await _db.ComputerSystems.AnyAsync(s => s.Name == dto.Name))
+            {
+                return ServiceResult<int>.Conflict($"A system named {dto.Name} already exists");
+            }
+
+            if (await _db.ComputerSystems.AnyAsync(s => s.Code == dto.Code))
+            {
+                return ServiceResult<int>.Conflict($"A system with code {dto.Code} already exists");
             }
 
             ComputerSystem system = new ComputerSystem
@@ -86,7 +112,7 @@ namespace Validation_Management_API.Services
                 {
                     Id = u.Id,
                     Name = u.Name,
-                    TotalProjects = u.Projects!.Count(p => p.Status == Models.Enums.ProjectStatus.Completed),
+                    TotalProjects = u.Projects!.Count(),
                     CurrentlyActiveProjectCount = u.Projects!.Count(p => p.Status == Models.Enums.ProjectStatus.InProgress),
                     LatestValidationDate = u.History!
                         .Where(h => h.Status == Models.Enums.ValidationStatus.Completed)
@@ -105,11 +131,11 @@ namespace Validation_Management_API.Services
 
             if (!string.IsNullOrWhiteSpace(dto.Name))
             {
-                query = query.Where(s => s.Name.Contains(dto.Name));
+                query = query.Where(s => EF.Functions.ILike(s.Name, $"%{dto.Name}%"));
             }
             if (!string.IsNullOrWhiteSpace(dto.Code))
             {
-                query = query.Where(s => s.Code.Contains(dto.Code));
+                query = query.Where(s => EF.Functions.ILike(s.Code, $"%{dto.Code}%"));
             }
             if (dto.LocationId != null)
             {
@@ -212,7 +238,7 @@ namespace Validation_Management_API.Services
             }
             computerSystem.IsActive = true;
             await _db.SaveChangesAsync();
-            return ServiceResult<bool>.Ok(true);
+            return ServiceResult<bool>.NoContent();
         }
 
         private const long MaxAttachmentBytes = 5 * 1024 * 1024;
@@ -365,9 +391,16 @@ namespace Validation_Management_API.Services
 
             if (dto.OwnerId != null)
             {
-                if (!await _db.Employees.AnyAsync(e => e.Id == dto.OwnerId))
+                Employee? owner = await _db.Employees.FirstOrDefaultAsync(e => e.Id == dto.OwnerId);
+
+                if (owner == null)
                 {
                     return ServiceResult<bool>.NotFound($"Owner/Employee with id {dto.OwnerId} does not exist");
+                }
+
+                if (!owner.IsActive && owner.Id != system.OwnerId)
+                {
+                    return ServiceResult<bool>.BadRequest($"Owner/Employee with id {dto.OwnerId} is inactive");
                 }
 
                 system.OwnerId = dto.OwnerId.Value;
