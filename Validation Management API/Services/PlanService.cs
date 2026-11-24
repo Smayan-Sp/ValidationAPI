@@ -49,7 +49,7 @@ namespace Validation_Management_API.Services
                             Status = t.Status,
                             Contributors = t.Contributors
                             .OrderBy(o => o.Id)
-                            .Select(c => new IdNameDTO { Id = c.EmployeeId, Name = c.Employee.Name }).ToList()
+                            .Select(c => new PlanContributorDTO { Id = c.EmployeeId, Name = c.Employee.Name, IsMandatory = c.IsMandatory }).ToList()
                         }).ToList()
                     }).ToList(),
                 }).FirstOrDefaultAsync();
@@ -264,6 +264,11 @@ namespace Validation_Management_API.Services
             task.PlannedStartDate = start;
             task.PlannedEndDate = end;
 
+            if (task.IsOverdue && end > DateTime.UtcNow)
+            {
+                task.IsOverdue = false;
+            }
+
             if (dto.Status != null && dto.Status != task.Status)
             {
                 bool validMove = (task.Status, dto.Status.Value) switch
@@ -280,15 +285,32 @@ namespace Validation_Management_API.Services
 
                 if (dto.Status == ProjectTaskStatus.InProgress)
                 {
-                    Project project = await _db.Projects.FirstAsync(p => p.Id == projectId);
+                    Project project = await _db.Projects
+                        .Include(p => p.Systems)
+                        .FirstAsync(p => p.Id == projectId);
 
                     if (project.Status == ProjectStatus.Planned)
                     {
                         project.Status = ProjectStatus.InProgress;
+
+                        foreach (ComputerSystem system in project.Systems)
+                        {
+                            _db.ValidationHistories.Add(new ValidationHistory
+                            {
+                                ComputerSystemId = system.Id,
+                                ProjectId = project.Id,
+                                Status = ValidationStatus.InProgress
+                            });
+                        }
                     }
                 }
 
                 task.Status = dto.Status.Value;
+
+                if (task.Status == ProjectTaskStatus.Completed)
+                {
+                    task.IsOverdue = false;
+                }
             }
 
             if (dto.Contributors != null)

@@ -11,6 +11,7 @@ namespace Validation_Management_API.Models.DTO
         public ProjectValidationType ValidationType { get; set; }
         public DateTime PlannedStartDate { get; set; }
         public DateTime PlannedEndDate { get; set; }
+        [MinLength(1, ErrorMessage = "A project needs at least one system")]
         public List<int> SystemIds { get; set; } = [];
         public List<int> LocationIds { get; set; } = [];
     }
