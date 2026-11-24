@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Validation_Management_API.Models.DTO;
 using Validation_Management_API.Services.Interfaces;
 
@@ -7,6 +8,7 @@ namespace Validation_Management_API.Controllers
 
     [Route("Api/System")]
     [ApiController]
+    [Authorize]
     public class SystemController(IComputerSystemService computerSystemService) : ApiBaseController
     {
 

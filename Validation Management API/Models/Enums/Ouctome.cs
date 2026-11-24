@@ -6,5 +6,6 @@
     NotFound = 3,
     BadRequest = 4,
     Conflict = 5,
-    InternalServerError = 6
+    InternalServerError = 6,
+    Forbidden = 7
 }

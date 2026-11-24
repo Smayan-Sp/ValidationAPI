@@ -1,5 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using System.Xml;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Validation_Management_API.Models.DTO;
 using Validation_Management_API.Models.Enums;
 using Validation_Management_API.Services.Interfaces;
@@ -8,6 +8,7 @@ namespace Validation_Management_API.Controllers
 {
     [Route("Api/Project")]
     [ApiController]
+    [Authorize]
     public class ProjectController(IProjectService projectService) : ApiBaseController
     {
         [HttpGet("{id:int}")]
@@ -18,7 +19,13 @@ namespace Validation_Management_API.Controllers
                 return BadRequest("Id must be greater than 0");
             }
 
-            return ToActionResult(await projectService.GetProject(id));
+            int? employeeId = CurrentEmployeeId;
+            if (employeeId == null)
+            {
+                return Unauthorized();
+            }
+
+            return ToActionResult(await projectService.GetProject(id, employeeId.Value));
         }
 
         [HttpPost]
@@ -81,7 +88,14 @@ namespace Validation_Management_API.Controllers
             {
                 return BadRequest("Id must be greater than 0");
             }
-            return ToActionResult(await projectService.UpdateProject(id, dto));
+
+            int? employeeId = CurrentEmployeeId; 
+            if (employeeId == null)
+            {
+                return Unauthorized();
+            }
+
+            return ToActionResult(await projectService.UpdateProject(id, employeeId.Value, dto));
         }
 
         [HttpPatch("{id:int}/status")]
@@ -92,7 +106,13 @@ namespace Validation_Management_API.Controllers
                 return BadRequest("Id must be greater than 0");
             }
 
-            return ToActionResult(await projectService.ChangeStatus(id, status));
+            int? employeeId = CurrentEmployeeId;
+            if (employeeId == null)
+            {
+                return Unauthorized();
+            }
+
+            return ToActionResult(await projectService.ChangeStatus(id, employeeId.Value, status));
         }
     }
 }

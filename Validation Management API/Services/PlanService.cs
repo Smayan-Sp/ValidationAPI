@@ -201,8 +201,23 @@ namespace Validation_Management_API.Services
 
         }
 
-        public async Task<ServiceResult<bool>> UpdateTask(int projectId, int taskId, UpdateTaskDTO dto)
+        public async Task<ServiceResult<bool>> UpdateTask(int projectId, int taskId, int callerEmployeeId, UpdateTaskDTO dto)
         {
+            int? managerId = await _db.Projects
+                .Where(p => p.Id == projectId)
+                .Select(p => (int?)p.ManagerId)
+                .FirstOrDefaultAsync();
+
+            if (managerId == null)
+            {
+                return ServiceResult<bool>.NotFound("That project does not exist");
+            }
+
+            if (managerId != callerEmployeeId)
+            {
+                return ServiceResult<bool>.Forbidden("Only the project manager can update this project's tasks");
+            }
+
             if ((dto.PlannedStartDate != null && dto.PlannedStartDate.Value.Kind != DateTimeKind.Utc)
                 || (dto.PlannedEndDate != null && dto.PlannedEndDate.Value.Kind != DateTimeKind.Utc))
             {

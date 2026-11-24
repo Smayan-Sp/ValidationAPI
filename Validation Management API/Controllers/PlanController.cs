@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Validation_Management_API.Models.DTO;
 using Validation_Management_API.Services.Interfaces;
@@ -6,6 +7,7 @@ namespace Validation_Management_API.Controllers
 {
     [Route("Api/Project/{projectId:int}/plan")]
     [ApiController]
+    [Authorize]
     public class PlanController(IPlanService planService) : ApiBaseController
     {
         [HttpGet]
@@ -49,7 +51,13 @@ namespace Validation_Management_API.Controllers
                 return BadRequest("Ids must be greater than 0");
             }
 
-            return ToActionResult(await planService.UpdateTask(projectId, taskId, dto));
+            int? employeeId = CurrentEmployeeId;
+            if (employeeId == null)
+            {
+                return Unauthorized();
+            }
+
+            return ToActionResult(await planService.UpdateTask(projectId, taskId, employeeId.Value, dto));
         }
 
         [HttpPost("tasks/{taskId:int}/contributors")]

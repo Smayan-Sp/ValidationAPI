@@ -6,12 +6,12 @@ namespace Validation_Management_API.Services.Interfaces
 {
     public interface IProjectService
     {
-        Task<ServiceResult<ProjectDTO>> GetProject(int id);
+        Task<ServiceResult<ProjectDTO>> GetProject(int id, int callerEmployeeId);
         Task<ServiceResult<int>> CreateProject(CreateProjectDTO dto);
         Task<ServiceResult<PagedResult<ProjectSummaryDTO>>> SearchProject(SearchProjectDTO dto);
         Task<ServiceResult<DashboardDTO>> GetDashboard(int id);
         Task<ServiceResult<int>> CloneProject(int sourceProjectId, CloneProjectDTO dto);
-        Task<ServiceResult<bool>> ChangeStatus(int id, ProjectStatus status);
-        Task<ServiceResult<bool>> UpdateProject(int id, UpdateProjectDTO dto);
+        Task<ServiceResult<bool>> ChangeStatus(int id, int callerEmployeeId, ProjectStatus status);
+        Task<ServiceResult<bool>> UpdateProject(int id, int callerEmployeeId, UpdateProjectDTO dto);
     }
 }

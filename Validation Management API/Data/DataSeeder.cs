@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Validation_Management_API.Models;
 using Validation_Management_API.Models.Enums;
@@ -9,7 +10,11 @@ namespace Validation_Management_API.Data
     {
         public static async Task SeedAsync(ApplicationDbContext db)
         {
-            if (await db.Departments.AnyAsync()) return;
+            if (await db.Departments.AnyAsync())
+            {
+                await SeedUsersAsync(db);
+                return;
+            }
 
             var today = DateTime.UtcNow.Date;
 
@@ -249,6 +254,33 @@ namespace Validation_Management_API.Data
             db.AddRange(catalog);
             db.AddRange(systems);
             db.AddRange(project1, project2, project3, project4);
+
+            await db.SaveChangesAsync();
+
+            await SeedUsersAsync(db);
+        }
+
+        private const string TestPassword = "Password123!";
+
+        private static async Task SeedUsersAsync(ApplicationDbContext db)
+        {
+            if (await db.Users.AnyAsync()) return;
+
+            var hasher = new PasswordHasher<User>();
+            var activeEmployees = await db.Employees.Where(e => e.IsActive).OrderBy(e => e.Id).ToListAsync();
+
+            foreach (var employee in activeEmployees)
+            {
+                var user = new User
+                {
+                    Name = employee.Name,
+                    Email = $"employee{employee.Id}@test.com",
+                    EmployeeId = employee.Id,
+                    Role = "User"
+                };
+                user.PasswordHash = hasher.HashPassword(user, TestPassword);
+                db.Users.Add(user);
+            }
 
             await db.SaveChangesAsync();
         }

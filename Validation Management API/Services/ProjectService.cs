@@ -1,6 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Query.Internal;
+﻿using Microsoft.EntityFrameworkCore;
 using Validation_Management_API.Data;
 using Validation_Management_API.Helpers;
 using Validation_Management_API.Models;
@@ -19,11 +17,12 @@ namespace Validation_Management_API.Services
             _db = db;
         }
 
-        public async Task<ServiceResult<ProjectDTO>> GetProject(int id)
+        public async Task<ServiceResult<ProjectDTO>> GetProject(int id, int callerEmployeeId)
         {
             var dto = await _db.Projects
                 .AsNoTracking()
-                .Where(u => u.Id == id)
+                .Where(u => u.Id == id && (u.ManagerId == callerEmployeeId
+                    || u.ProjectDocuments.Any(d => d.Tasks.Any(t => t.Contributors.Any(c => c.EmployeeId == callerEmployeeId)))))
                 .Select(u => new ProjectDTO
                 {
                     Id = u.Id,
@@ -332,13 +331,20 @@ namespace Validation_Management_API.Services
             return ServiceResult<DashboardDTO>.Ok(dashboard);
         }
 
-        public async Task<ServiceResult<bool>> ChangeStatus(int id, ProjectStatus status)
+        public async Task<ServiceResult<bool>> ChangeStatus(int id, int callerEmployeeId, ProjectStatus status)
         {
-            Project? project = await _db.Projects.Where(p => p.Id == id).FirstOrDefaultAsync();
+            Project? project = await _db.Projects
+                .Include(p => p.Systems)
+                .FirstOrDefaultAsync(p => p.Id == id);
 
             if (project == null)
             {
                 return ServiceResult<bool>.NotFound("That project does not exist");
+            }
+
+            if (project.ManagerId != callerEmployeeId)
+            {
+                return ServiceResult<bool>.Forbidden("Only the project manager can change this project's status");
             }
 
             bool allowed = (project.Status, status) switch
@@ -370,11 +376,29 @@ namespace Validation_Management_API.Services
             }
 
             project.Status = status;
+
+            ValidationStatus validationStatus = status switch
+            {
+                ProjectStatus.InProgress => ValidationStatus.InProgress,
+                ProjectStatus.Completed => ValidationStatus.Completed,
+                _ => ValidationStatus.Pending
+            };
+
+            foreach (ComputerSystem system in project.Systems)
+            {
+                _db.ValidationHistories.Add(new ValidationHistory
+                {
+                    ComputerSystemId = system.Id,
+                    ProjectId = project.Id,
+                    Status = validationStatus
+                });
+            }
+
             await _db.SaveChangesAsync();
             return ServiceResult<bool>.Ok(true);
         }
 
-        public async Task<ServiceResult<bool>> UpdateProject(int id, UpdateProjectDTO dto)
+        public async Task<ServiceResult<bool>> UpdateProject(int id, int callerEmployeeId, UpdateProjectDTO dto)
         {
             Project? project = await _db.Projects
                 .Include(p => p.Systems)
@@ -384,6 +408,11 @@ namespace Validation_Management_API.Services
             if (project == null)
             {
                 return ServiceResult<bool>.NotFound("That project does not exist");
+            }
+
+            if (project.ManagerId != callerEmployeeId)
+            {
+                return ServiceResult<bool>.Forbidden("Only the project manager can update this project");
             }
 
             if (dto.Name != null)

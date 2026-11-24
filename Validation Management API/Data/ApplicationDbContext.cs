@@ -16,6 +16,7 @@ namespace Validation_Management_API.Data
         public DbSet<DocumentList> DocumentLists => Set<DocumentList>();
         public DbSet<Attachment> Attachments => Set<Attachment>();
         public DbSet<ValidationHistory> ValidationHistories => Set<ValidationHistory>();
+        public DbSet<User> Users => Set<User>();
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -56,6 +57,10 @@ namespace Validation_Management_API.Data
             modelBuilder.Entity<ProjectDocument>()
                 .HasOne(d => d.DocumentList).WithMany()
                 .HasForeignKey(d => d.DocumentListId).OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<User>()
+                .HasOne(u => u.Employee).WithMany()
+                .HasForeignKey(u => u.EmployeeId).OnDelete(DeleteBehavior.Restrict);
         }
     }
 }

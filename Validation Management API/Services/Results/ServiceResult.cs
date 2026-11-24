@@ -47,6 +47,11 @@
             return Create(false, Outcome.Conflict, message: message);
         }
 
+        public static ServiceResult<T> Forbidden(string message)
+        {
+            return Create(false, Outcome.Forbidden, message: message);
+        }
+
         public static ServiceResult<T> InternalServerError (string message)
         {
             return Create(false, Outcome.InternalServerError, message: message);
